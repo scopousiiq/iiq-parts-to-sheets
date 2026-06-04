@@ -63,6 +63,7 @@ All state lives in `Config` so the load is resumable across the 6-minute Apps Sc
 
 ### Google Sheets structure
 
+- **Instructions** — in-sheet end-user documentation (canonical Instructions Sheet Pattern; first tab)
 - **Config** — key-value settings
 - **DateFilters** — start/end of reporting window (defaults to school-year range from Config)
 - **InventoryActions** — primary data (25 columns; see layout below)

@@ -3,6 +3,7 @@
 ## 2026-06-04
 
 ### Added
+- **Instructions sheet** (`setupInstructionsSheet()` in `scripts/Setup.gs`) — canonical in-sheet end-user documentation per the workspace Instructions Sheet Pattern, modeled on `iiq-labor-to-sheets`. Covers overview, quick start, the three-group load flow, sheet/menu references, automation, school-year locking, troubleshooting, Looker Studio / Power BI integration, tips, and support. Wired into `setupPartsTrackerDashboard()` and placed as the first tab via `reorderSheets_()`. README + CLAUDE.md sheet lists updated.
 - `LICENSE` — MIT, matching the sibling `iiq-*-to-sheets` repos.
 - `.clasp.json` — bound test deployment ("iiQ Parts to Sheets (Test)" sheet) so `npm run push` works out of the box for development.
 

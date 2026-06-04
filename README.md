@@ -12,6 +12,7 @@ Together they cover the **tickets + labor + parts** trio that schools need for f
 
 | Sheet | Purpose |
 |-------|---------|
+| **Instructions** | In-sheet setup guide and full reference — the primary end-user docs |
 | **Dashboard** | KPI tiles: total parts cost, qty used, action count, tickets-with-parts |
 | **ByCategory** | Parts cost & qty grouped by inventory category |
 | **ByItem** | Top parts by total spend |

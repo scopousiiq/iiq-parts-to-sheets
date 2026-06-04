@@ -59,6 +59,7 @@ function setupPartsTrackerDashboard() {
     if (didCreate) created.push(name); else skipped.push(name);
   }
 
+  track('Instructions', setupInstructionsSheet(ss));
   track('Config', setupConfigSheet(ss));
   track('DateFilters', setupDateFiltersSheet(ss));
   track('InventoryActions', setupActionsSheet(ss));
@@ -88,7 +89,7 @@ function setupPartsTrackerDashboard() {
 
 function reorderSheets_(ss) {
   const order = [
-    'Dashboard', 'DateFilters',
+    'Instructions', 'Dashboard', 'DateFilters',
     'ByCategory', 'ByItem', 'ByTeam', 'ByLocation', 'ByTicket', 'MonthlyTrend',
     'InventoryActions', 'Tickets', 'InventoryItems',
     'Config', 'Logs'
@@ -100,6 +101,236 @@ function reorderSheets_(ss) {
       ss.moveActiveSheet(i + 1);
     }
   });
+}
+
+// --- Instructions sheet ---
+// Canonical Instructions Sheet Pattern (see workspace CANONICAL_PATTERNS.md):
+// the primary end-user documentation, embedded in the spreadsheet itself.
+
+function setupInstructionsSheet(ss) {
+  if (ss.getSheetByName('Instructions')) return false;
+
+  const sheet = ss.insertSheet('Instructions');
+  sheet.setColumnWidth(1, 700);
+  sheet.setColumnWidth(2, 500);
+
+  // --- Row builders ---
+  var row = 1;
+
+  function writeHeader(text) {
+    sheet.getRange(row, 1).setValue(text).setFontWeight('bold').setFontSize(14);
+    row++;
+  }
+
+  function writeSectionHeader(text) {
+    sheet.getRange(row, 1).setValue(text).setFontWeight('bold').setFontSize(11);
+    row++;
+  }
+
+  function writeLine(text) {
+    sheet.getRange(row, 1).setValue(text);
+    row++;
+  }
+
+  function writePair(col1, col2) {
+    sheet.getRange(row, 1).setValue(col1);
+    sheet.getRange(row, 2).setValue(col2);
+    row++;
+  }
+
+  function writePairBold(col1, col2) {
+    sheet.getRange(row, 1).setValue(col1).setFontWeight('bold');
+    sheet.getRange(row, 2).setValue(col2);
+    row++;
+  }
+
+  function blankRow() { row++; }
+
+  // ===== TITLE / OVERVIEW =====
+  writeHeader('iiQ PARTS TRACKER');
+  writeLine('This spreadsheet pulls parts (inventory) usage and cost data from IncidentIQ into');
+  writeLine('Google Sheets, providing rollup reports by category, item, team, location, and ticket.');
+  writeLine('All analytics update automatically via formulas — no manual calculation needed.');
+  blankRow();
+  writeLine('Companion to iiq-tickets-to-sheets and iiq-labor-to-sheets — together they cover the');
+  writeLine('tickets + labor + parts trio for full operating-cost reporting.');
+  blankRow();
+
+  // ===== QUICK START =====
+  writeSectionHeader('QUICK START');
+  writeLine('1. Run  iiQ Data > Setup > Run Complete Setup');
+  writeLine('2. Go to the Config sheet and fill in:');
+  writeLine('     API_BASE_URL  —  your district\'s IncidentIQ URL (e.g. https://district.incidentiq.com)');
+  writeLine('     BEARER_TOKEN  —  your API bearer token (JWT) — obtain from iiQ: Admin > Developer Tools');
+  writeLine('     SITE_ID  —  your site UUID');
+  writeLine('     MODULE  —  Ticketing or Facilities (selects the IncidentIQ module)');
+  writeLine('     SCHOOL_YEAR_START / SCHOOL_YEAR_END  —  the date range for data');
+  writeLine('3. Run  iiQ Data > Setup > Test API Connection  to verify credentials');
+  writeLine('4. Run  iiQ Data > Load Data > Start Initial Load  to begin pulling data');
+  writeLine('5. Wait for loading to complete (large datasets load in batches across multiple runs)');
+  writeLine('6. (Optional) Run  iiQ Data > Setup > Setup Automated Triggers  for daily refresh');
+  blankRow();
+
+  // ===== HOW DATA LOADING WORKS =====
+  writeSectionHeader('HOW DATA LOADING WORKS');
+  writeLine('Data loads in three sequential groups:');
+  writeLine('  Group 1:  Parts catalog (InventoryItems) — small, one pass');
+  writeLine('  Group 2:  Tickets with parts usage (Tickets) — only tickets that consumed parts');
+  writeLine('            in the school-year window, with team/location/issue context');
+  writeLine('  Group 3:  Inventory actions (InventoryActions) — the parts consumption events,');
+  writeLine('            pulled per ticket from Group 2 and tagged with ticket context');
+  blankRow();
+  writeLine('Google Apps Script has a 6-minute execution limit. Large loads automatically pause');
+  writeLine('and resume. You can resume manually (iiQ Data > Load Data > Continue Loading) or');
+  writeLine('let the automated monitor trigger pick it up every 10 minutes.');
+  blankRow();
+  writeLine('Progress is tracked in the Config sheet (TICKET_LOAD_PAGE, TICKET_PROCESS_INDEX).');
+  writeLine('Use  iiQ Data > Check Status  to see current progress at any time.');
+  blankRow();
+
+  // ===== SHEET REFERENCE =====
+  writeSectionHeader('SHEET REFERENCE');
+  blankRow();
+  writePairBold('Sheet', 'Description');
+  writePair('Instructions', 'This sheet — setup guide and reference');
+  writePair('Dashboard', 'KPI summary: total parts cost, qty used, action count, tickets with parts');
+  writePair('DateFilters', 'Date range used by all analytics (defaults to the school year from Config)');
+  writePair('ByCategory', 'Which part categories cost the most? Cost, qty, actions, tickets per category');
+  writePair('ByItem', 'Which specific parts cost the most? Cost, qty, avg unit cost per item');
+  writePair('ByTeam', 'Which teams consume the most parts? Cost, qty, tickets per assigned team');
+  writePair('ByLocation', 'Which schools/buildings consume the most parts? Cost, qty, tickets per location');
+  writePair('ByTicket', 'Which tickets were the most expensive? Parts cost, qty, actions per ticket');
+  writePair('MonthlyTrend', 'How does parts spend change over the year? Cost, qty, actions per month');
+  writePair('InventoryActions', 'Raw data: one row per parts consumption event (' + ACTIONS_HEADERS.length + ' columns)');
+  writePair('Tickets', 'Ticket context for tickets with parts usage (' + TICKETS_HEADERS.length + ' columns)');
+  writePair('InventoryItems', 'Parts catalog reference (' + ITEMS_HEADERS.length + ' columns)');
+  writePair('Config', 'All settings, credentials, and load state (key-value pairs)');
+  writePair('Logs', 'Operation log (newest first, auto-trimmed to 1000 rows)');
+  blankRow();
+  writeLine('InventoryActions includes only consumption events (parts used on tickets) — receipts,');
+  writeLine('adjustments, and returns are excluded so cost rollups reflect actual usage.');
+  blankRow();
+
+  // ===== USING DATE FILTERS =====
+  writeSectionHeader('USING DATE FILTERS');
+  writeLine('All analytics sheets filter rows by the Start/End dates in DateFilters!B2 and C2.');
+  writeLine('By default these are formulas reading SCHOOL_YEAR_START / SCHOOL_YEAR_END from Config.');
+  blankRow();
+  writeLine('To analyze a narrower window (e.g. one month), type dates directly into B2 and C2.');
+  writeLine('To restore the school-year default, delete the DateFilters sheet and run');
+  writeLine('iiQ Data > Setup > Run Complete Setup (existing sheets are not overwritten).');
+  blankRow();
+
+  // ===== MENU REFERENCE =====
+  writeSectionHeader('MENU REFERENCE  (iiQ Data)');
+  blankRow();
+  writePairBold('Menu Item', 'What It Does');
+  writePair('Check Status', 'Shows current load progress and data counts');
+  writePair('View Dashboard', 'Navigates to the Dashboard sheet');
+  blankRow();
+  writeLine('  Setup submenu:');
+  writePair('  Run Complete Setup', 'Creates all sheets, headers, and formulas (never overwrites existing sheets)');
+  writePair('  Regenerate Analytics Sheets', 'Rebuilds the formula sheets (ByCategory, ByItem, etc.) from scratch');
+  writePair('  Test API Connection', 'Verifies API credentials work');
+  writePair('  Verify Configuration', 'Checks all required Config settings are filled in');
+  writePair('  Setup Automated Triggers', 'Installs monitor (10 min) and daily refresh (2 AM) triggers');
+  writePair('  Remove Automated Triggers', 'Removes all time-based triggers');
+  writePair('  View Trigger Status', 'Shows which triggers are currently installed');
+  blankRow();
+  writeLine('  Load Data submenu:');
+  writePair('  Start Initial Load', 'Begins loading all data for the configured school year');
+  writePair('  Continue Loading', 'Resumes a paused load from where it left off');
+  writePair('  Refresh Inventory Items', 'Reloads the parts catalog (Group 1) on demand');
+  blankRow();
+  writeLine('  Troubleshooting submenu:');
+  writePair('  View Logs', 'Navigates to the Logs sheet');
+  writePair('  Reset Load States', 'Resets all load progress (does not delete data)');
+  writePair('  Full Reload (Clear Data)', 'Deletes all data and unlocks school year — requires triggers removed first');
+  blankRow();
+
+  // ===== AUTOMATION =====
+  writeSectionHeader('AUTOMATION');
+  writeLine('Two automated triggers are available (install via iiQ Data > Setup > Setup Automated Triggers):');
+  blankRow();
+  writePairBold('Trigger', 'Schedule & Purpose');
+  writePair('Data Load Monitor', 'Every 10 minutes — resumes any paused loads automatically');
+  writePair('Daily Refresh', 'Daily at 2 AM — re-pulls tickets with parts and their inventory actions');
+  blankRow();
+  writeLine('Triggers skip gracefully if another operation is already running (no conflicts).');
+  writeLine('The daily refresh only runs after the initial load is complete. The parts catalog');
+  writeLine('(InventoryItems) is not refreshed automatically — use Refresh Inventory Items as needed.');
+  blankRow();
+
+  // ===== SCHOOL YEAR & DATA SCOPE =====
+  writeSectionHeader('SCHOOL YEAR & DATA SCOPE');
+  writeLine('Each spreadsheet holds one school year of data. The date range is set in Config:');
+  writeLine('  SCHOOL_YEAR_START  and  SCHOOL_YEAR_END');
+  blankRow();
+  writeLine('Once data loading begins, the school year dates and Module are LOCKED to prevent accidental changes.');
+  writeLine('To load a different school year:');
+  writeLine('  1. Remove triggers  (iiQ Data > Setup > Remove Automated Triggers)');
+  writeLine('  2. Full Reload  (iiQ Data > Troubleshooting > Full Reload) — clears all data and unlocks dates');
+  writeLine('  3. Update SCHOOL_YEAR_START and SCHOOL_YEAR_END in Config');
+  writeLine('  4. Start Initial Load');
+  blankRow();
+  writeLine('For multiple school years, make a copy of the spreadsheet and configure each with different dates.');
+  blankRow();
+
+  // ===== TROUBLESHOOTING =====
+  writeSectionHeader('TROUBLESHOOTING');
+  blankRow();
+  writePairBold('Problem', 'Solution');
+  writePair('Load seems stuck', 'Check Status. If paused, run Continue Loading or wait for the monitor trigger.');
+  writePair('API connection fails', 'Verify API_BASE_URL (no /api suffix), BEARER_TOKEN, and SITE_ID in Config.');
+  writePair('"Another operation is running"', 'Wait a few minutes. Locks auto-expire after 6 minutes.');
+  writePair('Analytics show wrong data', 'Check DateFilters dates. Run Regenerate Analytics Sheets.');
+  writePair('Analytics sheets are empty', 'InventoryActions must have data. Ensure all 3 load groups completed.');
+  writePair('Need to change school year', 'Remove triggers first, then Full Reload to unlock and clear data.');
+  writePair('Tickets load but no actions', 'Group 3 runs after Group 2 finishes — Check Status, then Continue Loading.');
+  writePair('Quantities look doubled', 'Run Reset Load States, then Full Reload — a partial Group 3 may have re-appended.');
+  blankRow();
+
+  // ===== DASHBOARD INTEGRATION =====
+  writeSectionHeader('DASHBOARD INTEGRATION  (Looker Studio / Power BI)');
+  writeLine('Looker Studio:');
+  writeLine('  1. In Looker Studio, choose Create > Data source > Google Sheets connector');
+  writeLine('  2. Select this spreadsheet and the InventoryActions sheet (use first row as headers)');
+  writeLine('  3. Build charts: scorecards from TotalCost/QuantityAbs, bar charts by CategoryName or');
+  writeLine('     AssignedTeam, time series on ActionDate, tables by ItemName');
+  writeLine('  4. Add the Tickets and InventoryItems sheets as extra data sources if needed');
+  blankRow();
+  writeLine('Power BI:');
+  writeLine('  1. Share this spreadsheet (or publish to web as CSV) and use Get Data > Web,');
+  writeLine('     or connect via a Google Sheets connector');
+  writeLine('  2. Use InventoryActions as the fact table; Tickets and InventoryItems as dimensions');
+  writeLine('     (join on TicketId and ItemId)');
+  blankRow();
+  writeLine('Tip: dashboards should read the raw data sheets, not the By* rollup sheets — BI tools');
+  writeLine('do their own grouping, and the raw sheets carry every dimension column.');
+  blankRow();
+
+  // ===== TIPS =====
+  writeSectionHeader('TIPS');
+  writeLine('- The Logs sheet records every operation — check it first when debugging.');
+  writeLine('- Config values are all strings. Don\'t change auto-managed keys manually.');
+  writeLine('- Analytics sheets are formula-driven and update instantly when InventoryActions changes.');
+  writeLine('- TotalCost = ABS(Quantity) x UnitCost, computed at load time per consumption event.');
+  writeLine('- THROTTLE_MS (default 1000) controls delay between API calls. Lower = faster but may hit rate limits.');
+  writeLine('- PAGE_SIZE (default 500) controls records per API call.');
+  blankRow();
+
+  // ===== SUPPORT =====
+  writeSectionHeader('SUPPORT');
+  writeLine('Source code, issues, and updates: github.com/scopousiiq/iiq-parts-to-sheets');
+  writeLine('Companion projects: iiq-tickets-to-sheets, iiq-labor-to-sheets (same GitHub org)');
+  writeLine('For API credential help, see your IncidentIQ administrator (Admin > Developer Tools).');
+  blankRow();
+  writeLine('Last updated: ' + new Date().toISOString().split('T')[0]);
+
+  // Freeze row 1 for the title
+  sheet.setFrozenRows(1);
+
+  return true;
 }
 
 // --- Config sheet ---
