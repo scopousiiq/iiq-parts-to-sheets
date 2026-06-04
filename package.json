@@ -1,0 +1,10 @@
+{
+  "name": "iiq-parts-to-sheets",
+  "version": "0.1.0",
+  "description": "Google Apps Script + Google Sheets — pulls parts (inventory) usage and cost data from the Incident IQ API for rollup analytics by category, item, team, location, and ticket.",
+  "license": "MIT",
+  "scripts": {
+    "push": "clasp push",
+    "open": "clasp open"
+  }
+}
