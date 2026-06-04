@@ -4,6 +4,7 @@
 
 ### Added
 - `LICENSE` — MIT, matching the sibling `iiq-*-to-sheets` repos.
+- `.clasp.json` — bound test deployment ("iiQ Parts to Sheets (Test)" sheet) so `npm run push` works out of the box for development.
 
 ### Changed
 - `README.md` — rewrote the Data source section to describe the verified three-group load flow (catalog → tickets-with-parts via `InventoryUsedDate` facet → per-ticket inventory actions); the previous text described the abandoned single-endpoint approach. Linked `iiq-labor-to-sheets` to its published repo.
