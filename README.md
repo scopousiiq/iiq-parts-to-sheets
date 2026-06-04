@@ -4,7 +4,7 @@ Google Apps Script + Google Sheets project that pulls **parts (inventory) usage 
 
 This is a companion to:
 - [`iiq-tickets-to-sheets`](https://github.com/scopousiiq/iiq-tickets-to-sheets) — ticket + SLA data
-- `iiq-labor-to-sheets` — labor hours and cost per ticket
+- [`iiq-labor-to-sheets`](https://github.com/scopousiiq/iiq-labor-to-sheets) — labor hours and cost per ticket
 
 Together they cover the **tickets + labor + parts** trio that schools need for full operating-cost reporting.
 
@@ -26,13 +26,13 @@ Together they cover the **tickets + labor + parts** trio that schools need for f
 
 ## Data source
 
-Single primary endpoint: **`POST /api/v1.0/inventory/actions/query`**
+The load runs in three sequential groups:
 
-Each `InventoryAction` is a stock-change event (parts used on tickets, parts received, parts adjusted). For ticket-related actions, `RelatedEntityId` references the ticket. The request expands `Inventory` (catalog item + location), `Ticket`, and `CreatedByUser` via the `Fields` projection so most context is available in one call.
+1. **`POST /api/v1.0/inventory/items/query`** — full parts catalog reference.
+2. **`POST /api/v1.0/tickets`** with `Facet: 'InventoryUsedDate'` — the driver. This server-side facet returns exactly the tickets that had parts consumed in the reporting window, with full context (assigned user/team, location, issue, status).
+3. **`POST /api/v1.0/inventory/actions/query`** — called once per ticket from step 2 (`EntityId` filter). Each `InventoryAction` is a stock-change event; rows are filtered client-side to actual consumption events (ticket-usage type, negative quantity) and denormalized with ticket context inline.
 
-Two helper endpoints:
-- `POST /api/v1.0/tickets` — enrich with assigned user/team/location/category/status for tickets that have parts usage
-- `POST /api/v1.0/inventory/items/query` — full catalog reference
+> **Why per-ticket?** The `/inventory/actions/query` endpoint ignores date-range filters and never returns the expanded `Ticket` field, so a single bulk pull can't be scoped to the reporting window or joined to tickets. Driving from the tickets endpoint keeps the pull bounded to the school year and gives every action its ticket context.
 
 ## Quick start
 

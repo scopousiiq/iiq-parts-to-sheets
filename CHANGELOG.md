@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-04
+
+### Added
+- `LICENSE` — MIT, matching the sibling `iiq-*-to-sheets` repos.
+
+### Changed
+- `README.md` — rewrote the Data source section to describe the verified three-group load flow (catalog → tickets-with-parts via `InventoryUsedDate` facet → per-ticket inventory actions); the previous text described the abandoned single-endpoint approach. Linked `iiq-labor-to-sheets` to its published repo.
+
 ## 2026-05-18
 
 ### Changed
