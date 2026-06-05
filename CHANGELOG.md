@@ -3,6 +3,7 @@
 ## 2026-06-05
 
 ### Changed
+- **`setupPartsTrackerDashboard()` is now a destructive clean slate** (model-project behavior): every `setup*Sheet()` deletes and recreates its sheet via `deleteSheetIfExists()` instead of skipping existing ones. The confirm dialog now warns that data and credentials will be lost, and the operation is gated by `requireNoTriggers()`. `regenerateAnalyticsSheetsWithConfirm()` drops its redundant delete loop. Instructions sheet (menu reference, DateFilters restore steps) and README updated to match.
 - **Config sheet QOL** (`setupConfigSheet()` in `scripts/Setup.gs`) — brought up to par with `iiq-tickets-to-sheets`: MODULE is now a dropdown (Ticketing/Facilities) with help text, SCHOOL_YEAR_START/END are pre-populated with the current June-based school year in YYYY-MM-DD (cells number-formatted to keep that display), API_BASE_URL ships a `https://your-district.incidentiq.com` placeholder, and keys are grouped under shaded `#` section headers (Required / School Year / Performance / Managed Automatically). Instructions sheet quick-start updated to match.
 
 ## 2026-06-04

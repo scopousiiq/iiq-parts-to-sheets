@@ -44,41 +44,49 @@ function setupPartsTrackerDashboard() {
   const ui = SpreadsheetApp.getUi();
   const response = ui.alert(
     'Setup iiQ Parts Tracker',
-    'This will create all required sheets, headers, and formulas.\n\n' +
-    'Existing sheets will not be overwritten.\n\n' +
-    'Continue?',
+    '⚠️ WARNING: This will DELETE and RECREATE the following sheets:\n\n' +
+    'DATA SHEETS:\n' +
+    '- Instructions (setup guide)\n' +
+    '- Config (API settings) - CREDENTIALS WILL BE LOST!\n' +
+    '- DateFilters (date range)\n' +
+    '- InventoryActions - ALL DATA WILL BE LOST!\n' +
+    '- Tickets - ALL DATA WILL BE LOST!\n' +
+    '- InventoryItems - ALL DATA WILL BE LOST!\n' +
+    '- Logs (operations)\n\n' +
+    'ANALYTICS SHEETS:\n' +
+    '- Dashboard, ByCategory, ByItem, ByTeam, ByLocation, ByTicket, MonthlyTrend\n\n' +
+    'This provides a CLEAN SLATE for the spreadsheet.\n\n' +
+    'Are you sure you want to continue?',
     ui.ButtonSet.YES_NO
   );
   if (response !== ui.Button.YES) return;
 
+  // Destructive op safety: rebuilding sheets while the monitor/daily
+  // triggers are installed could collide with a run mid-rebuild.
+  if (!requireNoTriggers('Run Complete Setup')) return;
+
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const created = [];
-  const skipped = [];
 
-  function track(name, didCreate) {
-    if (didCreate) created.push(name); else skipped.push(name);
-  }
-
-  track('Instructions', setupInstructionsSheet(ss));
-  track('Config', setupConfigSheet(ss));
-  track('DateFilters', setupDateFiltersSheet(ss));
-  track('InventoryActions', setupActionsSheet(ss));
-  track('Tickets', setupTicketsSheet(ss));
-  track('InventoryItems', setupItemsSheet(ss));
-  track('ByCategory', setupByCategorySheet(ss));
-  track('ByItem', setupByItemSheet(ss));
-  track('ByTeam', setupByTeamSheet(ss));
-  track('ByLocation', setupByLocationSheet(ss));
-  track('ByTicket', setupByTicketSheet(ss));
-  track('MonthlyTrend', setupMonthlyTrendSheet(ss));
-  track('Dashboard', setupDashboardSheet(ss));
-  track('Logs', setupLogsSheet(ss));
+  setupInstructionsSheet(ss); created.push('Instructions');
+  setupConfigSheet(ss); created.push('Config');
+  setupDateFiltersSheet(ss); created.push('DateFilters');
+  setupActionsSheet(ss); created.push('InventoryActions');
+  setupTicketsSheet(ss); created.push('Tickets');
+  setupItemsSheet(ss); created.push('InventoryItems');
+  setupByCategorySheet(ss); created.push('ByCategory');
+  setupByItemSheet(ss); created.push('ByItem');
+  setupByTeamSheet(ss); created.push('ByTeam');
+  setupByLocationSheet(ss); created.push('ByLocation');
+  setupByTicketSheet(ss); created.push('ByTicket');
+  setupMonthlyTrendSheet(ss); created.push('MonthlyTrend');
+  setupDashboardSheet(ss); created.push('Dashboard');
+  setupLogsSheet(ss); created.push('Logs');
 
   reorderSheets_(ss);
 
   const lines = [];
-  if (created.length) lines.push('Created: ' + created.join(', '));
-  if (skipped.length) lines.push('Already existed: ' + skipped.join(', '));
+  lines.push('Created ' + created.length + ' sheets: ' + created.join(', '));
   lines.push('');
   lines.push('Next steps:');
   lines.push('1. Fill in Config: API_BASE_URL, BEARER_TOKEN, SITE_ID, SCHOOL_YEAR_START, SCHOOL_YEAR_END');
@@ -108,7 +116,7 @@ function reorderSheets_(ss) {
 // the primary end-user documentation, embedded in the spreadsheet itself.
 
 function setupInstructionsSheet(ss) {
-  if (ss.getSheetByName('Instructions')) return false;
+  deleteSheetIfExists(ss, 'Instructions');
 
   const sheet = ss.insertSheet('Instructions');
   sheet.setColumnWidth(1, 700);
@@ -218,8 +226,9 @@ function setupInstructionsSheet(ss) {
   writeLine('By default these are formulas reading SCHOOL_YEAR_START / SCHOOL_YEAR_END from Config.');
   blankRow();
   writeLine('To analyze a narrower window (e.g. one month), type dates directly into B2 and C2.');
-  writeLine('To restore the school-year default, delete the DateFilters sheet and run');
-  writeLine('iiQ Data > Setup > Run Complete Setup (existing sheets are not overwritten).');
+  writeLine('To restore the school-year default, paste these formulas back into B2 and C2:');
+  writeLine('  B2:  =IFERROR(VALUE(VLOOKUP("SCHOOL_YEAR_START",Config!A:B,2,FALSE)),"")');
+  writeLine('  C2:  =IFERROR(VALUE(VLOOKUP("SCHOOL_YEAR_END",Config!A:B,2,FALSE)),"")');
   blankRow();
 
   // ===== MENU REFERENCE =====
@@ -230,7 +239,7 @@ function setupInstructionsSheet(ss) {
   writePair('View Dashboard', 'Navigates to the Dashboard sheet');
   blankRow();
   writeLine('  Setup submenu:');
-  writePair('  Run Complete Setup', 'Creates all sheets, headers, and formulas (never overwrites existing sheets)');
+  writePair('  Run Complete Setup', 'CLEAN SLATE: deletes and recreates ALL sheets — data and credentials are lost');
   writePair('  Regenerate Analytics Sheets', 'Rebuilds the formula sheets (ByCategory, ByItem, etc.) from scratch');
   writePair('  Test API Connection', 'Verifies API credentials work');
   writePair('  Verify Configuration', 'Checks all required Config settings are filled in');
@@ -337,7 +346,7 @@ function setupInstructionsSheet(ss) {
 // --- Config sheet ---
 
 function setupConfigSheet(ss) {
-  if (ss.getSheetByName('Config')) return false;
+  deleteSheetIfExists(ss, 'Config');
   const sheet = ss.insertSheet('Config');
 
   // Pre-populate the school year with sensible defaults (June-based school
@@ -400,7 +409,7 @@ function setupConfigSheet(ss) {
 // --- DateFilters helper sheet ---
 
 function setupDateFiltersSheet(ss) {
-  if (ss.getSheetByName('DateFilters')) return false;
+  deleteSheetIfExists(ss, 'DateFilters');
   const sheet = ss.insertSheet('DateFilters');
   sheet.getRange(1, 1, 1, 3).setValues([['Date Range', 'Start', 'End']]).setFontWeight('bold');
   sheet.getRange(2, 1, 1, 3).setValues([['This School Year', '', '']]);
@@ -415,7 +424,7 @@ function setupDateFiltersSheet(ss) {
 // --- Data sheets ---
 
 function setupActionsSheet(ss) {
-  if (ss.getSheetByName('InventoryActions')) return false;
+  deleteSheetIfExists(ss, 'InventoryActions');
   const sheet = ss.insertSheet('InventoryActions');
   sheet.getRange(1, 1, 1, ACTIONS_HEADERS.length).setValues([ACTIONS_HEADERS]);
   sheet.getRange(1, 1, 1, ACTIONS_HEADERS.length).setFontWeight('bold').setBackground('#1f3a93').setFontColor('white');
@@ -429,7 +438,7 @@ function setupActionsSheet(ss) {
 }
 
 function setupTicketsSheet(ss) {
-  if (ss.getSheetByName('Tickets')) return false;
+  deleteSheetIfExists(ss, 'Tickets');
   const sheet = ss.insertSheet('Tickets');
   sheet.getRange(1, 1, 1, TICKETS_HEADERS.length).setValues([TICKETS_HEADERS]);
   sheet.getRange(1, 1, 1, TICKETS_HEADERS.length).setFontWeight('bold').setBackground('#1f3a93').setFontColor('white');
@@ -439,7 +448,7 @@ function setupTicketsSheet(ss) {
 }
 
 function setupItemsSheet(ss) {
-  if (ss.getSheetByName('InventoryItems')) return false;
+  deleteSheetIfExists(ss, 'InventoryItems');
   const sheet = ss.insertSheet('InventoryItems');
   sheet.getRange(1, 1, 1, ITEMS_HEADERS.length).setValues([ITEMS_HEADERS]);
   sheet.getRange(1, 1, 1, ITEMS_HEADERS.length).setFontWeight('bold').setBackground('#1f3a93').setFontColor('white');
@@ -455,7 +464,7 @@ function setupItemsSheet(ss) {
 // columns for grouping (per CANONICAL_PATTERNS).
 
 function setupByCategorySheet(ss) {
-  if (ss.getSheetByName('ByCategory')) return false;
+  deleteSheetIfExists(ss, 'ByCategory');
   const sheet = ss.insertSheet('ByCategory');
   const headers = ['Category', 'Total Cost', 'Quantity Used', 'Action Count', 'Unique Tickets'];
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
@@ -480,7 +489,7 @@ function byCategoryFormula_() {
 }
 
 function setupByItemSheet(ss) {
-  if (ss.getSheetByName('ByItem')) return false;
+  deleteSheetIfExists(ss, 'ByItem');
   const sheet = ss.insertSheet('ByItem');
   const headers = ['Item Name', 'Category', 'Total Cost', 'Quantity Used', 'Avg Unit Cost', 'Actions'];
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
@@ -507,7 +516,7 @@ function byItemFormula_() {
 }
 
 function setupByTeamSheet(ss) {
-  if (ss.getSheetByName('ByTeam')) return false;
+  deleteSheetIfExists(ss, 'ByTeam');
   const sheet = ss.insertSheet('ByTeam');
   const headers = ['Assigned Team', 'Total Cost', 'Quantity Used', 'Unique Tickets'];
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
@@ -531,7 +540,7 @@ function byTeamFormula_() {
 }
 
 function setupByLocationSheet(ss) {
-  if (ss.getSheetByName('ByLocation')) return false;
+  deleteSheetIfExists(ss, 'ByLocation');
   const sheet = ss.insertSheet('ByLocation');
   const headers = ['Ticket Location', 'Total Cost', 'Quantity Used', 'Unique Tickets'];
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
@@ -555,7 +564,7 @@ function byLocationFormula_() {
 }
 
 function setupByTicketSheet(ss) {
-  if (ss.getSheetByName('ByTicket')) return false;
+  deleteSheetIfExists(ss, 'ByTicket');
   const sheet = ss.insertSheet('ByTicket');
   const headers = ['Ticket Number', 'Subject', 'Assigned Team', 'Total Parts Cost', 'Total Qty', 'Actions'];
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
@@ -582,7 +591,7 @@ function byTicketFormula_() {
 }
 
 function setupMonthlyTrendSheet(ss) {
-  if (ss.getSheetByName('MonthlyTrend')) return false;
+  deleteSheetIfExists(ss, 'MonthlyTrend');
   const sheet = ss.insertSheet('MonthlyTrend');
   const headers = ['Month', 'Total Cost', 'Quantity Used', 'Actions'];
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
@@ -598,7 +607,7 @@ function setupMonthlyTrendSheet(ss) {
 }
 
 function setupDashboardSheet(ss) {
-  if (ss.getSheetByName('Dashboard')) return false;
+  deleteSheetIfExists(ss, 'Dashboard');
   const sheet = ss.insertSheet('Dashboard');
   sheet.getRange('A1').setValue('iiQ Parts Tracker — Dashboard').setFontSize(18).setFontWeight('bold');
   sheet.getRange('A3').setValue('Date Range');
@@ -628,7 +637,7 @@ function setupDashboardSheet(ss) {
 }
 
 function setupLogsSheet(ss) {
-  if (ss.getSheetByName('Logs')) return false;
+  deleteSheetIfExists(ss, 'Logs');
   const sheet = ss.insertSheet('Logs');
   sheet.getRange(1, 1, 1, 4).setValues([['Timestamp', 'Operation', 'Status', 'Details']]).setFontWeight('bold');
   sheet.setFrozenRows(1);
@@ -648,9 +657,7 @@ function regenerateAnalyticsSheetsWithConfirm() {
   if (response !== ui.Button.YES) return;
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  ['ByCategory', 'ByItem', 'ByTeam', 'ByLocation', 'ByTicket', 'MonthlyTrend', 'Dashboard'].forEach(function(name) {
-    deleteSheetIfExists(ss, name);
-  });
+  // Each setup function deletes its own sheet first (clean-slate builders).
   setupByCategorySheet(ss);
   setupByItemSheet(ss);
   setupByTeamSheet(ss);

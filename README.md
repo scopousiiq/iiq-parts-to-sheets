@@ -41,13 +41,13 @@ The load runs in three sequential groups:
 2. Paste each `scripts/*.gs` file into a matching Apps Script file
 3. Copy `scripts/appsscript.json` into the manifest
 4. Reload the sheet — an **iiQ Data** menu appears
-5. **iiQ Data → Setup → Run Complete Setup**
+5. **iiQ Data → Setup → Run Complete Setup** — ⚠️ clean slate: deletes and recreates all sheets (re-running it later wipes loaded data and credentials)
 6. Fill in the Config sheet:
    - `API_BASE_URL` — e.g. `https://district.incidentiq.com`
    - `BEARER_TOKEN` — JWT
    - `SITE_ID` — site UUID
-   - `MODULE` — `Ticketing` or `Facilities`
-   - `SCHOOL_YEAR_START` / `SCHOOL_YEAR_END` — reporting period
+   - `MODULE` — `Ticketing` or `Facilities` (dropdown)
+   - `SCHOOL_YEAR_START` / `SCHOOL_YEAR_END` — pre-filled with the current school year (`YYYY-MM-DD`)
 7. **iiQ Data → Setup → Test API Connection**
 8. **iiQ Data → Load Data → Start Initial Load**
 9. **iiQ Data → Setup → Setup Automated Triggers** (10-min monitor + daily 2 AM refresh)

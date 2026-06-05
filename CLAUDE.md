@@ -172,7 +172,8 @@ All state lives in `Config` so the load is resumable across the 6-minute Apps Sc
 - **Type coercion** — `getStringValue()`, `getIntValue()`, `getBoolValue()` handle Sheets' unpredictable return types.
 - **Config caching** — `cacheConfigRowPositions()` + `writeConfigValueDirect()` for tight loading loops.
 - **LockService concurrency** — `acquireScriptLock()` (menu items) vs `tryAcquireScriptLock()` (triggers).
-- **Destructive op safety** — `requireNoTriggers()` gates full reload.
+- **Destructive op safety** — `requireNoTriggers()` gates full reload and Run Complete Setup.
+- **Clean-slate setup** — `setupPartsTrackerDashboard()` deletes and recreates ALL sheets (model-project behavior); every `setup*Sheet()` starts with `deleteSheetIfExists()`. Never call a `setup*Sheet()` from a loader — it destroys data.
 - **Load state machine** — 4 ordered groups, each type has `LOAD_STATE_<TYPE>` in Config.
 - **Stable pagination** — All inventory queries sort `CreatedDate Ascending` per workspace memory rule.
 - **Resumable** — All paginators check `MAX_RUNTIME_MS = 5.5 min` and save cursor to Config before yielding.
