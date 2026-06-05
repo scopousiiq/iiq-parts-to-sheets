@@ -31,9 +31,9 @@ The load runs in three sequential groups:
 
 1. **`POST /api/v1.0/inventory/items/query`** — full parts catalog reference.
 2. **`POST /api/v1.0/tickets`** with `Facet: 'InventoryUsedDate'` — the driver. This server-side facet returns exactly the tickets that had parts consumed in the reporting window, with full context (assigned user/team, location, issue, status).
-3. **`POST /api/v1.0/inventory/actions/query`** — called once per ticket from step 2 (`EntityId` filter). Each `InventoryAction` is a stock-change event; rows are filtered client-side to actual consumption events (ticket-usage type, negative quantity) and denormalized with ticket context inline.
+3. **`POST /api/v1.0/inventory/actions/query`** — one bulk paginated pull with the server-side `ActionTypeId` (ticket-usage) filter. Rows are kept client-side when they are real consumption events (negative quantity) on a step-2 ticket, then denormalized with ticket context and catalog item details.
 
-> **Why per-ticket?** The `/inventory/actions/query` endpoint ignores date-range filters and never returns the expanded `Ticket` field, so a single bulk pull can't be scoped to the reporting window or joined to tickets. Driving from the tickets endpoint keeps the pull bounded to the school year and gives every action its ticket context.
+> **Why this shape?** The `/inventory/actions/query` endpoint ignores date-range filters, so the date window is applied via step 2: the tickets endpoint's `InventoryUsedDate` facet is the only server-side date scoping available. The bulk `ActionTypeId` filter keeps the pull to one call per page (~150 calls for ~70k usage actions) instead of one call per ticket.
 
 ## Quick start
 

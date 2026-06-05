@@ -135,5 +135,5 @@ function resetLoadStates() {
   setConfig('TICKET_LOAD_PAGE', '');
   setConfig('TICKET_LOAD_FIRST_TOTAL_ROWS', '');
   setConfig('TICKET_LOAD_EXPECTED_COUNT', '');
-  setConfig('TICKET_PROCESS_INDEX', '');
+  setConfig('ACTIONS_LOAD_PAGE', '');
 }

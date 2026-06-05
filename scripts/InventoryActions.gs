@@ -1,13 +1,24 @@
 /**
- * InventoryActions.gs - Per-ticket parts loader.
+ * InventoryActions.gs - Bulk parts-usage loader.
  *
- * Iterates the Tickets sheet (already populated by TicketData.gs) and for each
- * TicketId queries POST /v1.0/inventory/actions/query with EntityId=<TicketId>.
- * Filters client-side to actual parts-on-ticket consumption (Quantity < 0,
- * InventoryActionTypeId = TICKET_USAGE), denormalizes ticket context inline
- * from buildTicketContextMap(), and appends to InventoryActions sheet.
+ * One paginated POST /v1.0/inventory/actions/query with the server-side
+ * ActionTypeId=TICKET_USAGE filter (one of the six typed filters this
+ * endpoint honors) instead of one query per ticket: ~150 calls for ~70k
+ * usage actions vs 8,000 calls for 8,000 tickets.
  *
- * Resumable via TICKET_PROCESS_INDEX (the row in Tickets we're currently on).
+ * Verified live against kcs tenant 2026-06-05:
+ *   - ActionTypeId filters server-side (TotalRows 70,511 vs 78,676 unfiltered)
+ *   - With Fields projection, items include Inventory (InventoryItemId,
+ *     LocationId), CreatedByUser, and Ticket (TicketId/Number/Subject)
+ *   - The nested InventoryItem/Category/Location expansions are NOT returned
+ *     in bulk mode, so item name/number/category are joined client-side from
+ *     the InventoryItems catalog sheet (Group 1)
+ *
+ * Scoping: rows are kept only when RelatedEntityId matches a ticket in the
+ * Tickets sheet (Group 2), which is already facet-scoped to the school-year
+ * window — the same semantics as the previous per-ticket loader.
+ *
+ * Resumable via ACTIONS_LOAD_PAGE.
  */
 
 const ACTIONS_MAX_RUNTIME_MS = 5.5 * 60 * 1000;
@@ -25,8 +36,7 @@ function loadInventoryActionsForTickets() {
 
   setLoadState(DATA_LOAD_TYPES.INVENTORY_ACTIONS, LOAD_STATES.IN_PROGRESS);
 
-  const lastTicketRow = ticketsSheet.getLastRow();
-  if (lastTicketRow < 2) {
+  if (ticketsSheet.getLastRow() < 2) {
     setLoadState(DATA_LOAD_TYPES.INVENTORY_ACTIONS, LOAD_STATES.COMPLETE);
     updateLastSync();
     logOperation('INVENTORY_ACTIONS', 'INFO', 'No tickets to process.');
@@ -34,105 +44,106 @@ function loadInventoryActionsForTickets() {
   }
 
   const contextMap = buildTicketContextMap();
+  const catalogMap = buildCatalogMap_();
 
-  // On first invocation, clear the InventoryActions sheet so we start fresh.
-  let ticketIndex = getIntValue(getConfig('TICKET_PROCESS_INDEX'), 0);
-  if (ticketIndex <= 0) {
+  // Resume from the saved page cursor; on a fresh start, clear the sheet.
+  let page = getIntValue(getConfig('ACTIONS_LOAD_PAGE'), 0);
+  if (page <= 0) {
+    page = 0;
     if (actionsSheet.getLastRow() > 1) {
       actionsSheet.getRange(2, 1, actionsSheet.getLastRow() - 1, actionsSheet.getLastColumn()).clearContent();
     }
-    ticketIndex = 0;
   }
 
-  // Read TicketIds in one batch — fast and avoids repeated sheet calls.
-  const ticketIds = ticketsSheet.getRange(2, 1, lastTicketRow - 1, 1).getValues().map(function(r) { return r[0]; });
-
+  const pageSize = getPageSize();
   const throttleMs = getThrottleMs();
-  let appendBuffer = [];
-  let processedThisRun = 0;
-  let actionsAppendedThisRun = 0;
+  let keptThisRun = 0;
 
-  while (ticketIndex < ticketIds.length) {
+  while (true) {
     if (Date.now() - startTime >= ACTIONS_MAX_RUNTIME_MS) {
-      flushAppendBuffer_(actionsSheet, appendBuffer);
-      writeConfigValueDirect('TICKET_PROCESS_INDEX', String(ticketIndex));
       logOperation('INVENTORY_ACTIONS', 'INFO',
-        'Paused at ticket index ' + ticketIndex + '/' + ticketIds.length +
-        '. This run: processed=' + processedThisRun + ', actions=' + actionsAppendedThisRun);
+        'Paused at page ' + page + '. Actions kept this run: ' + keptThisRun);
       return;
     }
 
-    const ticketId = ticketIds[ticketIndex];
-    if (!ticketId) {
-      ticketIndex++;
-      continue;
+    const response = fetchUsageActionsPage_(page, pageSize);
+    const items = response && response.Items ? response.Items : [];
+    if (items.length === 0) {
+      finalizeActionsLoad_(actionsSheet, keptThisRun);
+      return;
     }
 
-    const context = contextMap[ticketId] || {};
-    const actions = fetchAllActionsForTicket_(ticketId);
-    const usageActions = actions.filter(function(a) {
-      return a.InventoryActionTypeId === INVENTORY_ACTION_TYPE_TICKET_USAGE &&
-        typeof a.Quantity === 'number' &&
-        a.Quantity < 0;
+    const rows = [];
+    items.forEach(function(item) {
+      // Belt and braces: the server already filters by ActionTypeId, but a
+      // reversal/return entry shares the type with positive quantity.
+      if (item.InventoryActionTypeId !== INVENTORY_ACTION_TYPE_TICKET_USAGE) return;
+      if (!(typeof item.Quantity === 'number' && item.Quantity < 0)) return;
+      const ticketId = item.RelatedEntityId || '';
+      const context = contextMap[ticketId];
+      if (!context) return; // not one of our school-year tickets
+      rows.push(mapInventoryActionRow_(item, ticketId, context, catalogMap));
     });
 
-    usageActions.forEach(function(action) {
-      appendBuffer.push(mapInventoryActionRow_(action, ticketId, context));
-    });
-    actionsAppendedThisRun += usageActions.length;
-
-    // Flush in modest batches so the sheet stays close to current.
-    if (appendBuffer.length >= 200) {
-      flushAppendBuffer_(actionsSheet, appendBuffer);
-      appendBuffer = [];
+    if (rows.length > 0) {
+      flushAppendBuffer_(actionsSheet, rows);
+      keptThisRun += rows.length;
     }
 
-    ticketIndex++;
-    processedThisRun++;
-    writeConfigValueDirect('TICKET_PROCESS_INDEX', String(ticketIndex));
+    page++;
+    writeConfigValueDirect('ACTIONS_LOAD_PAGE', String(page));
+
+    if (response.Paging && response.Paging.PageCount !== undefined && page >= response.Paging.PageCount) {
+      finalizeActionsLoad_(actionsSheet, keptThisRun);
+      return;
+    }
 
     if (throttleMs > 0) Utilities.sleep(throttleMs);
   }
+}
 
-  flushAppendBuffer_(actionsSheet, appendBuffer);
+function finalizeActionsLoad_(actionsSheet, keptThisRun) {
   setLoadState(DATA_LOAD_TYPES.INVENTORY_ACTIONS, LOAD_STATES.COMPLETE);
-  writeConfigValueDirect('TICKET_PROCESS_INDEX', '');
+  writeConfigValueDirect('ACTIONS_LOAD_PAGE', '');
   updateLastSync();
+  const total = Math.max(0, actionsSheet.getLastRow() - 1);
   logOperation('INVENTORY_ACTIONS', 'SUCCESS',
-    'Load complete. Tickets processed: ' + ticketIds.length +
-    ', actions written this run: ' + actionsAppendedThisRun);
+    'Load complete. Usage actions on file: ' + total + ' (this run: ' + keptThisRun + ')');
 }
 
-function fetchAllActionsForTicket_(ticketId) {
-  // Per-ticket volume is small (almost always < 50 actions); one page handles
-  // it, but we paginate defensively in case a ticket has many entries.
-  const out = [];
-  const pageSize = 500;
-  let page = 0;
-  while (true) {
-    const sort = encodeURIComponent('ActionDate desc');
-    const endpoint = '/v1.0/inventory/actions/query?$p=' + page + '&$s=' + pageSize + '&$o=' + sort;
-    const response = apiRequest('POST', endpoint, { EntityId: ticketId });
-    const items = response && response.Items ? response.Items : [];
-    if (items.length === 0) break;
-    items.forEach(function(item) { out.push(item); });
-
-    if (response.Paging && response.Paging.PageCount !== undefined) {
-      if (page + 1 >= response.Paging.PageCount) break;
-    } else if (items.length < pageSize) {
-      break;
-    }
-    page++;
-  }
-  return out;
+function fetchUsageActionsPage_(page, pageSize) {
+  // Sorted CreatedDate Ascending per workspace memory rule (stable bulk
+  // pagination — new records append past the cursor instead of shifting it).
+  const sort = encodeURIComponent('CreatedDate Ascending');
+  const endpoint = '/v1.0/inventory/actions/query?$p=' + page + '&$s=' + pageSize + '&$o=' + sort;
+  return apiRequest('POST', endpoint, {
+    ActionTypeId: INVENTORY_ACTION_TYPE_TICKET_USAGE,
+    Fields: ['Inventory', 'CreatedByUser', 'Ticket']
+  });
 }
 
-function mapInventoryActionRow_(item, ticketId, context) {
+// InventoryItemId -> { name, number, category } from the InventoryItems
+// catalog sheet (Group 1). Bulk mode does not expand InventoryItem, so the
+// join happens here. Items deleted from the catalog resolve to blanks.
+function buildCatalogMap_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('InventoryItems');
+  if (!sheet || sheet.getLastRow() < 2) return {};
+  // Columns A-D: InventoryItemId, Name, ItemNumber, CategoryName
+  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 4).getValues();
+  const map = {};
+  data.forEach(function(row) {
+    if (!row[0]) return;
+    map[row[0]] = { name: row[1] || '', number: row[2] || '', category: row[3] || '' };
+  });
+  return map;
+}
+
+function mapInventoryActionRow_(item, ticketId, context, catalogMap) {
   const inv = item.Inventory || {};
-  const invItem = inv.InventoryItem || {};
-  const category = invItem.Category || {};
-  const location = inv.Location || {};
   const user = item.CreatedByUser || {};
+  const itemId = inv.InventoryItemId || '';
+  const cat = catalogMap[itemId] || {};
 
   const qty = typeof item.Quantity === 'number' ? item.Quantity : 0;
   const qtyAbs = Math.abs(qty);
@@ -147,12 +158,12 @@ function mapInventoryActionRow_(item, ticketId, context) {
     qtyAbs,
     unitCost,
     totalCost,
-    invItem.InventoryItemId || '',
-    invItem.Name || '',
-    invItem.ItemNumber || '',
-    category.Name || '',
-    location.LocationId || '',
-    location.Name || '',
+    itemId,
+    cat.name || '',
+    cat.number || '',
+    cat.category || '',
+    inv.LocationId || '',
+    '', // StockLocationName — no name source in bulk mode (was also blank per-ticket)
     ticketId,
     context.ticketNumber || '',
     context.subject || '',

@@ -186,14 +186,15 @@ function setupInstructionsSheet(ss) {
   writeLine('  Group 1:  Parts catalog (InventoryItems) — small, one pass');
   writeLine('  Group 2:  Tickets with parts usage (Tickets) — only tickets that consumed parts');
   writeLine('            in the school-year window, with team/location/issue context');
-  writeLine('  Group 3:  Inventory actions (InventoryActions) — the parts consumption events,');
-  writeLine('            pulled per ticket from Group 2 and tagged with ticket context');
+  writeLine('  Group 3:  Inventory actions (InventoryActions) — one bulk pull of all parts');
+  writeLine('            consumption events, kept only for Group 2 tickets and tagged with');
+  writeLine('            ticket context and catalog details');
   blankRow();
   writeLine('Google Apps Script has a 6-minute execution limit. Large loads automatically pause');
   writeLine('and resume. You can resume manually (iiQ Data > Load Data > Continue Loading) or');
   writeLine('let the automated monitor trigger pick it up every 10 minutes.');
   blankRow();
-  writeLine('Progress is tracked in the Config sheet (TICKET_LOAD_PAGE, TICKET_PROCESS_INDEX).');
+  writeLine('Progress is tracked in the Config sheet (TICKET_LOAD_PAGE, ACTIONS_LOAD_PAGE).');
   writeLine('Use  iiQ Data > Check Status  to see current progress at any time.');
   blankRow();
 

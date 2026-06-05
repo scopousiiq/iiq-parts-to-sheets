@@ -97,7 +97,7 @@ function triggerDailyRefresh() {
     setLoadState(DATA_LOAD_TYPES.INVENTORY_ACTIONS, LOAD_STATES.PENDING);
     setConfig('TICKET_LOAD_PAGE', '');
     setConfig('TICKET_LOAD_FIRST_TOTAL_ROWS', '');
-    setConfig('TICKET_PROCESS_INDEX', '');
+    setConfig('ACTIONS_LOAD_PAGE', '');
 
     executeNextLoadInternal_();
   } finally {

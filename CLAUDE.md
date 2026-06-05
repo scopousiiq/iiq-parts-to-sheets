@@ -12,10 +12,11 @@ The primary entity is the **InventoryAction** — a stock-change event. For tick
 
 **Always use `/api/v1.0/inventory/*` endpoints, NOT `/api/v1.0/parts/*`.** See workspace memory `feedback_inventory_not_parts_endpoint.md`.
 
-**`/inventory/actions/query` is heavily limited at the API level** — verified live against demo tenant on 2026-05-18:
+**`/inventory/actions/query` is heavily limited at the API level** — verified live against demo tenant on 2026-05-18, re-verified against kcs tenant 2026-06-05:
 - The `Filters` array silently ignores all unknown facets (including `ActionDate`). Only the 6 typed top-level Guid filters work: `ActionTypeId`, `InventoryItemId`, `InventoryId`, `LocationId`, **`EntityId`** (TicketId), `InventoryActionGroupKey`.
+- **`ActionTypeId` filters server-side in bulk mode** (kcs: 70,511 TICKET_USAGE rows vs 78,676 unfiltered) — this is what makes the single bulk pull viable.
 - The body `Paging` block is ignored — must pass `$p`/`$s`/`$o` on the query string.
-- The expanded `Ticket` field is never returned, even with `Fields: ["Ticket"]` requested.
+- With `Fields: ['Inventory','CreatedByUser','Ticket']`, bulk items DO include `Ticket` (TicketId/TicketNumber/Subject), `CreatedByUser`, and `Inventory` (with scalar `InventoryItemId` + `LocationId`). The **nested** `Inventory.InventoryItem` / `Category` / `Location` expansions are never returned in bulk mode — item name/number/category must be joined client-side from the InventoryItems catalog. (The 2026-05-18 note that `Ticket` is never returned was wrong for bulk mode.)
 
 **The load is driven from the tickets endpoint instead.** `POST /v1.0/tickets` supports `Facet: 'InventoryUsedDate'` which generates this SQL subquery:
 ```sql
@@ -44,7 +45,7 @@ Google Apps Script project — no local build/test framework. Files in `scripts/
 | `ApiClient.gs` | HTTP client with retry/backoff |
 | `DataOrchestrator.gs` | Load state machine (3 groups), `executeNextLoadInternal_()`, `startInitialLoad()` |
 | `TicketData.gs` | Primary loader — `POST /v1.0/tickets` with `Facet:'InventoryUsedDate'` scoping; writes to `Tickets` sheet. Also exposes `buildTicketContextMap()` for inline denorm. |
-| `InventoryActions.gs` | Per-ticket loader — iterates Tickets rows, `POST /v1.0/inventory/actions/query?...&EntityId=<TicketId>`, filters to TICKET_USAGE consumption events, denormalizes ticket context inline |
+| `InventoryActions.gs` | Bulk loader — one paginated `POST /v1.0/inventory/actions/query` with server-side `ActionTypeId=TICKET_USAGE` filter; keeps rows matching Group 2 tickets, joins item details from the InventoryItems catalog, denormalizes ticket context inline |
 | `InventoryItems.gs` | Catalog reference loader (`POST /v1.0/inventory/items/query`) |
 | `Setup.gs` | Sheet creation, headers, formulas |
 | `Menu.gs` | `onOpen()` menu (iiQ Data → Setup, Load Data, Troubleshooting) |
@@ -57,7 +58,7 @@ Three sequential groups; each can be paused/resumed via the 10-minute monitor tr
 
 1. **Group 1 — `INVENTORY_ITEMS`**: Pulls the parts catalog (small, one-shot).
 2. **Group 2 — `TICKETS_WITH_PARTS`**: Paginated `POST /v1.0/tickets` with `Filters: [{Facet:'InventoryUsedDate', Value:'daterange:...'}]`. Sorted `TicketCreatedDate asc` for stable pagination. Returns only tickets that had parts consumed in the school-year window, with full context (AssignedToUser, AssignedToTeam, Location, Issue, WorkflowStep). Writes to `Tickets` sheet.
-3. **Group 3 — `INVENTORY_ACTIONS`**: Iterates the `Tickets` sheet row by row. For each TicketId, calls `POST /v1.0/inventory/actions/query?$o=ActionDate desc&$p=N&$s=500` with `{EntityId: <TicketId>}` in the body. Filters client-side to `InventoryActionTypeId === TICKET_USAGE` AND `Quantity < 0` (the real consumption events; reversal/return entries are excluded). Denormalizes ticket context inline from `buildTicketContextMap()` (built once at the start of the group). Appends to `InventoryActions` sheet in 200-row batches. Resumable via `TICKET_PROCESS_INDEX`.
+3. **Group 3 — `INVENTORY_ACTIONS`**: One bulk paginated `POST /v1.0/inventory/actions/query?$o=CreatedDate Ascending&$p=N&$s=<PAGE_SIZE>` with `{ActionTypeId: TICKET_USAGE, Fields: ['Inventory','CreatedByUser','Ticket']}` in the body (~150 calls for ~70k usage actions vs one call per ticket). Client-side: keeps only `Quantity < 0` rows whose `RelatedEntityId` is in `buildTicketContextMap()` (Group 2 tickets — already school-year-scoped, so this applies the date window). Item name/number/category joined from the `InventoryItems` catalog via `buildCatalogMap_()`; ticket context denormalized inline. Appends page-by-page. Resumable via `ACTIONS_LOAD_PAGE`.
 
 All state lives in `Config` so the load is resumable across the 6-minute Apps Script execution limit.
 
@@ -91,15 +92,15 @@ All state lives in `Config` so the load is resumable across the 6-minute Apps Sc
 | 5 | E | QuantityAbs | `ABS(Quantity)` |
 | 6 | F | UnitCost | `item.UnitCost` |
 | 7 | G | TotalCost | `QuantityAbs × UnitCost` |
-| 8 | H | ItemId | `Inventory.InventoryItem.InventoryItemId` |
-| 9 | I | ItemName | `Inventory.InventoryItem.Name` |
-| 10 | J | ItemNumber | `Inventory.InventoryItem.ItemNumber` |
-| 11 | K | CategoryName | `Inventory.InventoryItem.Category.Name` |
-| 12 | L | StockLocationId | `Inventory.Location.LocationId` |
-| 13 | M | StockLocationName | `Inventory.Location.Name` |
-| 14 | N | TicketId | `Ticket.TicketId` |
-| 15 | O | TicketNumber | `Ticket.TicketNumber` |
-| 16 | P | TicketSubject | `Ticket.Subject` |
+| 8 | H | ItemId | `Inventory.InventoryItemId` |
+| 9 | I | ItemName | catalog join (`buildCatalogMap_()` from InventoryItems sheet) |
+| 10 | J | ItemNumber | catalog join |
+| 11 | K | CategoryName | catalog join |
+| 12 | L | StockLocationId | `Inventory.LocationId` |
+| 13 | M | StockLocationName | blank — no name source in bulk mode |
+| 14 | N | TicketId | `item.RelatedEntityId` |
+| 15 | O | TicketNumber | denormalized inline from Tickets sheet |
+| 16 | P | TicketSubject | denormalized inline from Tickets sheet |
 | 17 | Q | PerformedByUserId | `CreatedByUser.UserId` |
 | 18 | R | PerformedByUser | `CreatedByUser.Name` |
 | 19 | S | Description | `item.Description` |
@@ -162,7 +163,7 @@ All state lives in `Config` so the load is resumable across the 6-minute Apps Sc
 | `LOAD_STATE_*` | Per-group load states |
 | `TICKET_LOAD_PAGE` | Current page in the tickets-with-parts pull (Group 2) |
 | `TICKET_LOAD_FIRST_TOTAL_ROWS` / `TICKET_LOAD_EXPECTED_COUNT` | TotalRows tracking for drift detection |
-| `TICKET_PROCESS_INDEX` | Current ticket index in the per-ticket parts pull (Group 3) |
+| `ACTIONS_LOAD_PAGE` | Current page in the bulk inventory-actions pull (Group 3) |
 | `SCHOOL_YEAR_LOCKED*` | Locked-config snapshot |
 | `LAST_SYNC` | Last successful sync timestamp |
 

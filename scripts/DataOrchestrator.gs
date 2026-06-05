@@ -8,10 +8,11 @@
  *   Group 2 — TICKETS_WITH_PARTS:  POST /v1.0/tickets with InventoryUsedDate
  *                                  facet → only tickets that consumed parts
  *                                  in the school-year window
- *   Group 3 — INVENTORY_ACTIONS:   for each TicketId, POST /v1.0/inventory/
- *                                  actions/query with EntityId, filter to
- *                                  TICKET_USAGE actions, denormalize ticket
- *                                  context inline
+ *   Group 3 — INVENTORY_ACTIONS:   one bulk paginated POST /v1.0/inventory/
+ *                                  actions/query with the server-side
+ *                                  ActionTypeId=TICKET_USAGE filter; rows are
+ *                                  kept for Group 2 tickets and denormalized
+ *                                  with ticket context + catalog details
  */
 
 const DATA_LOAD_TYPES = {
@@ -60,7 +61,7 @@ function initializeAllLoads() {
   setConfig('TICKET_LOAD_PAGE', '');
   setConfig('TICKET_LOAD_FIRST_TOTAL_ROWS', '');
   setConfig('TICKET_LOAD_EXPECTED_COUNT', '');
-  setConfig('TICKET_PROCESS_INDEX', '');
+  setConfig('ACTIONS_LOAD_PAGE', '');
 }
 
 function isGroupComplete(groupNum) {
@@ -153,7 +154,7 @@ function startInitialLoad() {
     'This will load:\n' +
     '  1. Parts catalog (InventoryItems)\n' +
     '  2. Tickets that consumed parts in the school year\n' +
-    '  3. Inventory action events for each ticket\n\n' +
+    '  3. Parts consumption events (bulk, matched to those tickets)\n\n' +
     'The process is resumable and may take a while for large datasets.\n\n' +
     'Continue?',
     ui.ButtonSet.YES_NO

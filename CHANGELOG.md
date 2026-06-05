@@ -2,6 +2,9 @@
 
 ## 2026-06-05
 
+### Changed
+- **Group 3 rewritten from per-ticket to bulk** (`scripts/InventoryActions.gs`): instead of one `EntityId` query per ticket (8,000 tickets = 8,000 calls ≈ hours), a single paginated pull with the server-side `ActionTypeId=TICKET_USAGE` filter (~150 calls for ~70k usage actions ≈ minutes). Verified live: the filter works server-side, and bulk items include `Inventory` (scalar `InventoryItemId`/`LocationId`), `CreatedByUser`, and `Ticket` with a `Fields` projection. Rows are kept when `RelatedEntityId` matches a Group 2 ticket (already school-year-scoped); item name/number/category are joined from the InventoryItems catalog (`buildCatalogMap_()`) — **CategoryName and StockLocationId are now populated** (both were blank in the per-ticket version, which couldn't expand them either). Resumable via `ACTIONS_LOAD_PAGE` (replaces `TICKET_PROCESS_INDEX`; reset sites in `Menu.gs`/`Triggers.gs`/`DataOrchestrator.gs` updated). Instructions/README/CLAUDE.md updated, including correcting the 2026-05-18 note that `Ticket` is never returned (it is, in bulk mode).
+
 ### Added
 - **School-year window validation** (`validateSchoolYearWindow()` in `scripts/Config.gs`, wired into `startInitialLoad()`): unparseable dates (e.g. `2027-06-31`) and inverted ranges now block the load with a clear message before the lock snapshots them; an all-future window prompts "continue anyway?". `finalizeTicketLoad_()` (`scripts/TicketData.gs`) now logs a WARNING instead of SUCCESS when 0 tickets matched, pointing at the Config dates. Found via live smoke test: a future-dated window loaded "successfully" with 0 rows and looked like a query failure.
 
