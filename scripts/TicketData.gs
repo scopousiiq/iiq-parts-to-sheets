@@ -76,6 +76,16 @@ function finalizeTicketLoad_(sheet, firstTotalRows, lastTotalRows) {
   setLoadState(DATA_LOAD_TYPES.TICKETS_WITH_PARTS, LOAD_STATES.COMPLETE);
   writeConfigValueDirect('TICKET_LOAD_PAGE', '');
   const rowCount = Math.max(0, sheet.getLastRow() - 1);
+  if (rowCount === 0) {
+    // A 0-ticket result is usually a misconfigured window (future or
+    // wrong-year dates match nothing), not a healthy load — make it loud.
+    const range = getSchoolYearRange();
+    logOperation('TICKETS_WITH_PARTS', 'WARNING',
+      'Load complete but 0 tickets matched the window ' +
+      formatDateISO(range.startDate) + ' to ' + formatDateISO(range.endDate) +
+      '. If you expected data, check SCHOOL_YEAR_START / SCHOOL_YEAR_END in Config.');
+    return;
+  }
   logOperation('TICKETS_WITH_PARTS', 'SUCCESS',
     'Load complete. Rows: ' + rowCount + ', expected: ' + lastTotalRows +
     (firstTotalRows !== lastTotalRows ? ', drift: ' + (lastTotalRows - firstTotalRows) : ''));

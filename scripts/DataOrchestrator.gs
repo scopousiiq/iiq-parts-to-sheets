@@ -160,6 +160,20 @@ function startInitialLoad() {
   );
   if (response !== ui.Button.YES) return;
 
+  // Validate the window before the lock snapshots it — bad dates here mean
+  // a guaranteed-empty (or failed) load.
+  const dateCheck = validateSchoolYearWindow();
+  if (!dateCheck.ok) {
+    ui.alert('Invalid School Year',
+      dateCheck.message + '\n\nFix SCHOOL_YEAR_START / SCHOOL_YEAR_END in Config, then try again.',
+      ui.ButtonSet.OK);
+    return;
+  }
+  if (dateCheck.warning) {
+    const proceed = ui.alert('Check School Year', dateCheck.warning + '\n\nContinue anyway?', ui.ButtonSet.YES_NO);
+    if (proceed !== ui.Button.YES) return;
+  }
+
   const lock = acquireScriptLock();
   if (!lock) { showOperationBusyMessage('Start Initial Load'); return; }
   try {

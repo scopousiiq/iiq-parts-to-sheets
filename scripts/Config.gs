@@ -244,6 +244,40 @@ function getSchoolYearLabel() {
   return range.startDate.getFullYear() + '-' + range.endDate.getFullYear();
 }
 
+// Sanity-check the configured school-year window before a load locks it in.
+// Catches non-dates (e.g. "2027-06-31"), inverted ranges, and all-future
+// windows (which match nothing because no parts usage can exist yet).
+// Returns { ok: boolean, message?: string, warning?: string }.
+function validateSchoolYearWindow() {
+  const startRaw = getStringValue(getConfig('SCHOOL_YEAR_START'));
+  const endRaw = getStringValue(getConfig('SCHOOL_YEAR_END'));
+  const start = parseConfigDate(startRaw);
+  const end = parseConfigDate(endRaw);
+
+  if (!start || !end) {
+    return {
+      ok: false,
+      message: 'Could not parse ' +
+        (!start ? 'SCHOOL_YEAR_START ("' + startRaw + '")' : 'SCHOOL_YEAR_END ("' + endRaw + '")') +
+        ' as a date. Make sure it is a real calendar date in YYYY-MM-DD format.'
+    };
+  }
+  if (end.getTime() <= start.getTime()) {
+    return {
+      ok: false,
+      message: 'SCHOOL_YEAR_END (' + formatDateISO(end) + ') must be after SCHOOL_YEAR_START (' + formatDateISO(start) + ').'
+    };
+  }
+  if (start.getTime() > Date.now()) {
+    return {
+      ok: true,
+      warning: 'The school-year window (' + formatDateISO(start) + ' to ' + formatDateISO(end) + ') ' +
+        'starts in the future. No parts usage can exist in it yet, so the load will find 0 tickets.'
+    };
+  }
+  return { ok: true };
+}
+
 function isSchoolYearLocked() {
   return getBoolValue(getConfig('SCHOOL_YEAR_LOCKED'));
 }

@@ -2,6 +2,9 @@
 
 ## 2026-06-05
 
+### Added
+- **School-year window validation** (`validateSchoolYearWindow()` in `scripts/Config.gs`, wired into `startInitialLoad()`): unparseable dates (e.g. `2027-06-31`) and inverted ranges now block the load with a clear message before the lock snapshots them; an all-future window prompts "continue anyway?". `finalizeTicketLoad_()` (`scripts/TicketData.gs`) now logs a WARNING instead of SUCCESS when 0 tickets matched, pointing at the Config dates. Found via live smoke test: a future-dated window loaded "successfully" with 0 rows and looked like a query failure.
+
 ### Fixed
 - **"Range not found" error in Run Complete Setup** — `setupDashboardSheet()` used `getRange('B3:B3,D3:D3')`; `getRange()` does not accept comma-separated multi-range A1 notation. Replaced with `getRangeList(['B3','D3'])`. Latent since the initial scaffold; surfaced on the first end-to-end setup run.
 
