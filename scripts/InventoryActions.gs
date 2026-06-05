@@ -46,17 +46,30 @@ function loadInventoryActionsForTickets() {
   const contextMap = buildTicketContextMap();
   const catalogMap = buildCatalogMap_();
 
-  // Resume from the saved page cursor; on a fresh start, clear the sheet.
+  const pageSize = getPageSize();
+
+  // Resume from the saved page cursor; on a fresh start, clear the sheet and
+  // binary-search past the pages that predate our tickets entirely.
   let page = getIntValue(getConfig('ACTIONS_LOAD_PAGE'), 0);
   if (page <= 0) {
     page = 0;
     if (actionsSheet.getLastRow() > 1) {
       actionsSheet.getRange(2, 1, actionsSheet.getLastRow() - 1, actionsSheet.getLastColumn()).clearContent();
     }
+    // Fast-forward: actions sort CreatedDate Ascending, and an action cannot
+    // be recorded before its ticket exists — so pages older than the earliest
+    // Group 2 ticket can never contain a row we keep. ~8 probe calls skip
+    // what would otherwise be a sequential crawl through years of history.
+    const earliest = getEarliestTicketCreatedDate_(ticketsSheet);
+    if (earliest) {
+      page = findFirstRelevantPage_(pageSize, earliest);
+      if (page > 0) {
+        logOperation('INVENTORY_ACTIONS', 'INFO',
+          'Fast-forwarded to page ' + page + ' (first page reaching ' + formatDateISO(earliest) + ', the earliest ticket date).');
+      }
+    }
   }
 
-  const pageSize = getPageSize();
-  const throttleMs = getThrottleMs();
   let keptThisRun = 0;
 
   while (true) {
@@ -97,9 +110,57 @@ function loadInventoryActionsForTickets() {
       finalizeActionsLoad_(actionsSheet, keptThisRun);
       return;
     }
-
-    if (throttleMs > 0) Utilities.sleep(throttleMs);
+    // No sleep here: apiRequest() already enforces THROTTLE_MS per call.
   }
+}
+
+// Earliest CreatedDate (column D) across the Tickets sheet — the lower bound
+// for any action we could keep.
+function getEarliestTicketCreatedDate_(ticketsSheet) {
+  const lastRow = ticketsSheet.getLastRow();
+  if (lastRow < 2) return null;
+  const values = ticketsSheet.getRange(2, 4, lastRow - 1, 1).getValues();
+  let min = null;
+  values.forEach(function(r) {
+    const d = r[0] instanceof Date ? r[0] : new Date(r[0]);
+    if (!isNaN(d.getTime()) && (min === null || d.getTime() < min.getTime())) min = d;
+  });
+  return min;
+}
+
+// Binary search for the first page whose LAST item's CreatedDate reaches
+// targetDate. Probe fetches are discarded; the sequential read starts at the
+// returned page, so no kept row is ever skipped (the membership filter
+// re-checks every item on the boundary page).
+function findFirstRelevantPage_(pageSize, targetDate) {
+  const target = targetDate.getTime();
+
+  function lastCreatedOnPage(p) {
+    const resp = fetchUsageActionsPage_(p, pageSize);
+    const items = resp && resp.Items ? resp.Items : [];
+    const pageCount = resp && resp.Paging && resp.Paging.PageCount !== undefined ? resp.Paging.PageCount : null;
+    if (items.length === 0) return { time: null, pageCount: pageCount };
+    const last = new Date(items[items.length - 1].CreatedDate);
+    return { time: isNaN(last.getTime()) ? null : last.getTime(), pageCount: pageCount };
+  }
+
+  const first = lastCreatedOnPage(0);
+  if (first.time === null || first.time >= target) return 0;
+  if (!first.pageCount || first.pageCount <= 1) return 0;
+
+  // Invariant: last(lo) < target, answer is in (lo, hi].
+  let lo = 0;
+  let hi = first.pageCount - 1;
+  while (lo + 1 < hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    const probe = lastCreatedOnPage(mid);
+    if (probe.time === null || probe.time >= target) {
+      hi = mid;
+    } else {
+      lo = mid;
+    }
+  }
+  return hi;
 }
 
 function finalizeActionsLoad_(actionsSheet, keptThisRun) {
