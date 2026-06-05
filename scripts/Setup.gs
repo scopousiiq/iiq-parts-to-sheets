@@ -614,7 +614,7 @@ function setupDashboardSheet(ss) {
   sheet.getRange('B3').setFormula('=DateFilters!B2');
   sheet.getRange('C3').setValue('to');
   sheet.getRange('D3').setFormula('=DateFilters!C2');
-  sheet.getRange('B3:B3,D3:D3').setNumberFormat('yyyy-mm-dd');
+  sheet.getRangeList(['B3', 'D3']).setNumberFormat('yyyy-mm-dd');
 
   // KPI tiles
   sheet.getRange('A5').setValue('Total Parts Cost').setFontWeight('bold');
