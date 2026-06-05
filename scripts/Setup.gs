@@ -163,8 +163,9 @@ function setupInstructionsSheet(ss) {
   writeLine('     API_BASE_URL  —  your district\'s IncidentIQ URL (e.g. https://district.incidentiq.com)');
   writeLine('     BEARER_TOKEN  —  your API bearer token (JWT) — obtain from iiQ: Admin > Developer Tools');
   writeLine('     SITE_ID  —  your site UUID');
-  writeLine('     MODULE  —  Ticketing or Facilities (selects the IncidentIQ module)');
-  writeLine('     SCHOOL_YEAR_START / SCHOOL_YEAR_END  —  the date range for data');
+  writeLine('     MODULE  —  choose Ticketing or Facilities from the dropdown');
+  writeLine('     SCHOOL_YEAR_START / SCHOOL_YEAR_END  —  pre-filled with the current school year;');
+  writeLine('         adjust if needed (YYYY-MM-DD format)');
   writeLine('3. Run  iiQ Data > Setup > Test API Connection  to verify credentials');
   writeLine('4. Run  iiQ Data > Load Data > Start Initial Load  to begin pulling data');
   writeLine('5. Wait for loading to complete (large datasets load in batches across multiple runs)');
@@ -338,24 +339,60 @@ function setupInstructionsSheet(ss) {
 function setupConfigSheet(ss) {
   if (ss.getSheetByName('Config')) return false;
   const sheet = ss.insertSheet('Config');
+
+  // Pre-populate the school year with sensible defaults (June-based school
+  // year, mirroring getSchoolYearRange()) so users see the expected format.
+  const today = new Date();
+  const startYear = today.getMonth() >= 5 ? today.getFullYear() : today.getFullYear() - 1;
+  const defaultStart = formatDateISO(new Date(startYear, 5, 1));
+  const defaultEnd = formatDateISO(new Date(startYear + 1, 4, 31));
+
   const rows = [
     ['Key', 'Value', 'Notes'],
-    ['API_BASE_URL', '', 'e.g. https://district.incidentiq.com (no /api suffix)'],
-    ['BEARER_TOKEN', '', 'Bearer JWT'],
+    ['# API Configuration (Required)', '', ''],
+    ['API_BASE_URL', 'https://your-district.incidentiq.com', 'Your IncidentIQ URL — base only, no /api suffix'],
+    ['BEARER_TOKEN', '', 'API bearer token (JWT) — obtain from iiQ: Admin > Developer Tools'],
     ['SITE_ID', '', 'Site UUID'],
-    ['MODULE', 'Ticketing', 'Ticketing or Facilities'],
-    ['SCHOOL_YEAR_START', '', 'Date — start of reporting period'],
-    ['SCHOOL_YEAR_END', '', 'Date — end of reporting period'],
+    ['MODULE', 'Ticketing', 'Choose from dropdown: Ticketing or Facilities'],
+    ['', '', ''],
+    ['# School Year (defaults to the current school year)', '', ''],
+    ['SCHOOL_YEAR_START', defaultStart, 'Reporting period start (YYYY-MM-DD)'],
+    ['SCHOOL_YEAR_END', defaultEnd, 'Reporting period end (YYYY-MM-DD)'],
+    ['', '', ''],
+    ['# Performance Settings (Optional)', '', ''],
     ['PAGE_SIZE', '500', 'Records per API call'],
     ['TICKET_BATCH_SIZE', '100', 'Tickets per ID-batch fetch'],
     ['THROTTLE_MS', '1000', 'Delay between API calls (ms)'],
-    ['LAST_SYNC', '', 'Auto-managed timestamp']
+    ['', '', ''],
+    ['# Managed Automatically — do not edit', '', ''],
+    ['LAST_SYNC', '', 'Last successful sync timestamp']
   ];
   sheet.getRange(1, 1, rows.length, 3).setValues(rows);
   sheet.getRange(1, 1, 1, 3).setFontWeight('bold').setBackground('#1f3a93').setFontColor('white');
+
+  // Section header rows (start with '#'): bold on a light-blue band
+  rows.forEach(function(r, i) {
+    if (String(r[0]).indexOf('#') === 0) {
+      sheet.getRange(i + 1, 1, 1, 3).setFontWeight('bold').setBackground('#e8f0fe');
+    }
+  });
+
+  // Dropdown validation for MODULE
+  const moduleRow = rows.findIndex(function(r) { return r[0] === 'MODULE'; }) + 1;
+  const moduleRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['Ticketing', 'Facilities'], true)
+    .setHelpText('Ticketing = IT Ticketing module, Facilities = Facilities Ticketing module')
+    .build();
+  sheet.getRange(moduleRow, 2).setDataValidation(moduleRule);
+
+  // Keep the pre-filled dates displaying as YYYY-MM-DD even if Sheets
+  // coerces the strings to date values.
+  const startRow = rows.findIndex(function(r) { return r[0] === 'SCHOOL_YEAR_START'; }) + 1;
+  sheet.getRange(startRow, 2, 2, 1).setNumberFormat('yyyy-mm-dd');
+
   sheet.setColumnWidth(1, 220);
   sheet.setColumnWidth(2, 360);
-  sheet.setColumnWidth(3, 360);
+  sheet.setColumnWidth(3, 420);
   sheet.setFrozenRows(1);
   return true;
 }

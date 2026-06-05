@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-06-05
+
+### Changed
+- **Config sheet QOL** (`setupConfigSheet()` in `scripts/Setup.gs`) — brought up to par with `iiq-tickets-to-sheets`: MODULE is now a dropdown (Ticketing/Facilities) with help text, SCHOOL_YEAR_START/END are pre-populated with the current June-based school year in YYYY-MM-DD (cells number-formatted to keep that display), API_BASE_URL ships a `https://your-district.incidentiq.com` placeholder, and keys are grouped under shaded `#` section headers (Required / School Year / Performance / Managed Automatically). Instructions sheet quick-start updated to match.
+
 ## 2026-06-04
 
 ### Added
